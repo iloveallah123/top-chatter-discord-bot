@@ -37,8 +37,10 @@ def initdb():
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS messaging_stats (
-            user_name TEXT PRIMARY KEY,
-            message_count INTEGER DEFAULT 0
+            guild_id INTEGER,
+            user_id INTEGER,
+            message_count INTEGER DEFAULT 0,
+            PRIMARY KEY(guild_id, user_id)
         )
     ''')
     conn.commit()
@@ -57,17 +59,19 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    if message.author.bot:
+    if message.author.bot or message.guild is None:
         return
 
-    user_name = message.author.display_name
+    guild_id = message.guild.id
+    user_id = message.author.id
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO messaging_stats (user_name, message_count)
-        VALUES (?,1)
-        ON CONFLICT(user_name) DO UPDATE SET message_count = message_count + 1
-    ''', (user_name, ))
+        INSERT INTO messaging_stats (guild_id, user_id, message_count)
+        VALUES (?, ?,1)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET message_count = message_count + 1
+    ''', (guild_id, user_id))
     
     conn.commit()
     conn.close()
@@ -181,9 +185,16 @@ async def lastweekmsgs(interaction: discord.Interaction):
 async def alltime(interaction: discord.Interaction):
     await interaction.response.defer()
 
+    guild_id = interaction.guild.id
+
     conn = sqlite3.connect(DB_FILE)
     cursor =  conn.cursor()
-    cursor.execute('SELECT user_name, message_count FROM messaging_stats ORDER BY message_count DESC LIMIT 10')
+    cursor.execute('''SELECT user_id, message_count 
+                   FROM messaging_stats 
+                   WHERE guild_id = ? 
+                   ORDER BY message_count DESC 
+                   LIMIT 10
+                   ''', (guild_id,))
     rows = cursor.fetchall()
     conn.close()
     if not rows:
@@ -191,10 +202,80 @@ async def alltime(interaction: discord.Interaction):
         return
     
     response = "## Biggest YAPPERS in the Server All Time\n"
-    for name, count in rows: 
-        response += f"**{name}** : {count} messages \n"
+    for user_id, count in rows:
+        member = interaction.guild.get_member(user_id)
+        display_name = member.display_name if member else f"User ({user_id})"
+        response += f"**{display_name}** : {count} messages \n"
 
     await interaction.followup.send(response)
+
+
+
+
+
+
+class ServerSetupView(discord.ui.View):
+    def __init__(self, guild_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+    @discord.ui.button(label="Confirm and Sync Server Data", style= discord.ButtonStyle.green)
+    async def confirm_setup(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
+        await interaction.edit_original_response(content="**Scan started!** I am scanning all the historical messages from your server. I'll let you know when I'm done!", view=None)
+        bot_instance= interaction.client
+        guild = bot_instance.get_guild(self.guild_id)
+        
+        if not guild:
+            await interaction.followup.send("**ERROR.** I couldn't find that server. Did I get kicked already?!?!")
+            return
+
+        server_msg_count = {}
+        
+        for channel in guild.text_channels:
+            if channel.permissions_for(guild.me).read_message_history:
+                try:
+                    async for message in channel.history(limit=None):
+                        if not message.author.bot:
+                            user_id = message.author.id
+                            server_msg_count[user_id] = server_msg_count.get(user_id, 0) + 1
+                
+                except Exception as e:
+                    print(f"Skipping channel {channel.name} due to an unexpected error: {e}")
+
+        if server_msg_count:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            for user_id, count in server_msg_count.items():
+                cursor.execute('''
+                                INSERT INTO messaging_stats (guild_id, user_id, message_count)
+                                VALUES (?, ?, ?)
+                                ON CONFLICT (guild_id, user_id) DO UPDATE SET message_count = ?
+                                ''', (self.guild_id, user_id, count, count))
+            conn.commit()
+            conn.close()
+
+                
+            
+        await interaction.followup.send(f"**SUCCESS!!!** Setup complete for **{guild.name}**. The /all-time leaderboard database has now been initialized!")
+
+                                            
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    print (f"Joined a new server: {guild.name}")
+
+    if guild.owner:
+        try:
+            view = ServerSetupView(guild.id)
+            await guild.owner.send(
+                f"Hello! I have just joined your server: **{guild.name}**.\n\n"
+                "To initiliaze the /all-time command, I need to scan your text channels and index all the message counts into my local database.\n"
+                "Click the button below to authorize and give me permission to do this setup synchronization!", 
+                view = view
+            )
+        except Exception as e:
+            print(f"Could not send a setup DM to the owner of **{guild.name}**: {e}")
     
 
 
