@@ -12,7 +12,8 @@ import datetime #handles time
 import sqlite3 #gives storiage without extra hosting cost
 import asyncio
 
-load_dotenv()
+script_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(dotenv_path=os.path.join(script_dir, '.env'))
 token = os.getenv('DISCORD_TOKEN')
 
 if not token:
@@ -29,14 +30,48 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix='/' , intents = intents)
 
+DB_FILE = "stats.db"
+
+def initdb():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS messaging_stats (
+            user_name TEXT PRIMARY KEY,
+            message_count INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 @bot.event
 async def on_ready():
+    initdb()
+
     print("I'm online and syncing commands!")
     try: 
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} commands!")
     except Exception as e:
         print(f"Failed to sync commands: {e}")
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    user_name = message.author.display_name
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO messaging_stats (user_name, message_count)
+        VALUES (?,1)
+        ON CONFLICT(user_name) DO UPDATE SET message_count = message_count + 1
+    ''', (user_name, ))
+    
+    conn.commit()
+    conn.close()
+    await bot.process_commands(message)
 
 
 @bot.tree.command(name="test", description= "Test if the bot is working")
@@ -142,48 +177,25 @@ async def lastweekmsgs(interaction: discord.Interaction):
     await interaction.followup.send(response)
 
 
-class AllTimeConfirmView(discord.ui.View):
-    def __init__(self, interaction: discord.Interaction):
-        super().__init__()
-        self.interaction = interaction
-
-    @discord.ui.button(label="Confirm & Run", style=discord.ButtonStyle.danger)
-    async def confirm_and_run(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # We defer the button click interaction itself so it doesn't time out
-        await interaction.response.defer()
-
-        await self.interaction.edit_original_response(content="⏳ **Processing...** I am scanning the entire channel history. This will take a moment...", view=None)
-        
-        channel = self.interaction.channel
-        msg_count = {}
-
-        async for message in channel.history(limit=None):
-            user_id = message.author.display_name
-            if user_id in msg_count:
-                msg_count[user_id] = msg_count[user_id] + 1
-            else:
-                msg_count[user_id] = 1
-
-        sorted_users = sorted(msg_count.items(), key=lambda item: item[1], reverse=True)
-
-        if not sorted_users:
-            await self.interaction.followup.send("No messages have been sent in this channel")
-            return
-
-        response = "## Top Chatters in the server\n"
-        for name, count in sorted_users[:10]:
-            response += f"**{name}** : {count} messages\n"
-
-        # Correctly responding as a follow-up to the original slash command
-        await self.interaction.followup.send(response)
-
-
 @bot.tree.command(name="all-time", description="Tells you who has the most messages in a server")
 async def alltime(interaction: discord.Interaction):
-    view = AllTimeConfirmView(interaction)
-    await interaction.response.send_message(
-        "⚠️ **WARNING:** This command can take a long time or crash the bot. Confirm only if you want to run it.",
-        view=view,
-    )
+    await interaction.response.defer()
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor =  conn.cursor()
+    cursor.execute('SELECT user_name, message_count FROM messaging_stats ORDER BY message_count DESC LIMIT 10')
+    rows = cursor.fetchall()
+    conn.close()
+    if not rows:
+        await interaction.followup.send("No message data has been saved yet!")
+        return
+    
+    response = "## Biggest YAPPERS in the Server All Time\n"
+    for name, count in rows: 
+        response += f"**{name}** : {count} messages \n"
+
+    await interaction.followup.send(response)
+    
+
 
 bot.run(token, log_handler=handler, log_level=logging.DEBUG) #any logs needed for debugging will be logged in discord.log file
