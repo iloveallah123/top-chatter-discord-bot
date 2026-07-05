@@ -1,3 +1,4 @@
 discord.log
 .env
 *.log
+stats.db
