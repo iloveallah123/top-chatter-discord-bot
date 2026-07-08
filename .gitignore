@@ -2,3 +2,4 @@ discord.log
 .env
 *.log
 stats.db
+stats.db-journal

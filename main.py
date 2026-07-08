@@ -35,6 +35,7 @@ DB_FILE = "stats.db"
 def initdb():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS messaging_stats (
             guild_id INTEGER,
@@ -43,6 +44,21 @@ def initdb():
             PRIMARY KEY(guild_id, user_id)
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS message_logs (
+                guild_id INTEGER,
+               user_id INTEGER,
+               timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS guild_configs (
+                   guild_id INTEGER PRIMARY KEY, 
+                   is_indexed BOOLEAN DEFAULT 0
+            )
+''')
     conn.commit()
     conn.close()
 
@@ -67,16 +83,33 @@ async def on_message(message: discord.Message):
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
     cursor.execute('''
         INSERT INTO messaging_stats (guild_id, user_id, message_count)
         VALUES (?, ?,1)
         ON CONFLICT(guild_id, user_id) DO UPDATE SET message_count = message_count + 1
+    ''', (guild_id, user_id))
+
+
+    cursor.execute('''
+        INSERT INTO messaging_logs (guild_id, user_id)
+        VALUES (?, ?)
     ''', (guild_id, user_id))
     
     conn.commit()
     conn.close()
     await bot.process_commands(message)
 
+
+@bot.tree.command(name="setup", description="Manually trigger the database sync for this server")
+async def setup(interaction: discord.Interaction):
+
+    view = ServerSetupView(interaction.guild.id)
+    await interaction.response.send_message(
+        "Click the button below to authorize the initial server scan!",
+        view=view,
+        ephemeral=True
+    )
 
 @bot.tree.command(name="test", description= "Test if the bot is working")
 async def test(interaction: discord.Interaction):
@@ -183,6 +216,20 @@ async def lastweekmsgs(interaction: discord.Interaction):
 
 @bot.tree.command(name="all-time", description="Tells you who has the most messages in a server")
 async def alltime(interaction: discord.Interaction):
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_indexed FROM  guild_configs WHERE guild_id = ?", (interaction.guild.id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or row [0] == 0:
+        await interaction.response.send_message(
+            "This server hasn't been scraped for message data yet. Please have the server owner run `/setup` to initialize the database.", 
+            ephemeral=True
+        )
+        return
+
     await interaction.response.defer()
 
     guild_id = interaction.guild.id
@@ -252,8 +299,11 @@ class ServerSetupView(discord.ui.View):
                                 VALUES (?, ?, ?)
                                 ON CONFLICT (guild_id, user_id) DO UPDATE SET message_count = ?
                                 ''', (self.guild_id, user_id, count, count))
+                
+            cursor.execute("INSERT OR REPLACE INTO guild_configs (guild_id, is_indexed) VALUES (?, 1)", (self.guild_id,))
             conn.commit()
             conn.close()
+            print(f"Database updated for guild {self.guild_id}. Row inserted/updated.")
 
                 
             
@@ -264,6 +314,12 @@ class ServerSetupView(discord.ui.View):
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     print (f"Joined a new server: {guild.name}")
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO guild_configs (guild_id, is_indexed) VALUES (?, 0)", (guild.id,))
+    conn.commit()
+    conn.close()
 
     if guild.owner:
         try:
