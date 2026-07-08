@@ -103,7 +103,7 @@ async def on_message(message: discord.Message):
 
 @bot.tree.command(name="setup", description="Manually trigger the database sync for this server")
 @app_commands.describe(force="Force a re-scan even if server's already been scanned")
-# @app_commands.checks.has_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
 async def setup(interaction: discord.Interaction, force: bool = False):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -126,7 +126,7 @@ async def setup(interaction: discord.Interaction, force: bool = False):
 
 
 @bot.tree.command(name="wipe-server-data", description="Delete all stored message data for this server")
-# @app_commands.checks.has_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
 async def wipe_server_data(interaction: discord.Interaction):
     if interaction.guild is None:
         await interaction.response.send_message(
