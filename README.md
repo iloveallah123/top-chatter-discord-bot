@@ -1,28 +1,41 @@
 # Top Chatter Bot 
 
-Welcome to **Top Chatter**. Basically, I wanted to figure out who the biggest yappers in my Discord server were, so I built this. It tracks message counts and ranks everyone so you can finally prove who needs to go outside and touch grass.
-
-I started this project to learn Python and `discord.py`, and it's honestly grown a lot. We went from scraping the API to a full local database setup. 
+I talk a lot... Especially in group chats with my friends on discord. We often use the discord search feature to see who has the most messages, but this is a manual process and requires you to look through every user and compare to see who has more messages. I wanted to solve this issue and learn how to make discord bots using Python and discord.py
 
 ## Features
 
-* **Time-Based Leaderboards:** See who is chatting the most with `/last-100-messages`, `/last-hour`, `/last-day`, and `/last-week`.
-* **All-Time Rankings:** Use `/all-time` to see the top 10 biggest yappers in the server's history. 
-* **Zero Lag:** Instead of scraping Discord's API every single time a command is run, the bot logs messages in real-time to a local SQLite database (`stats.db`). It's fast and doesn't get rate-limited.
-* **Name Change resistant:** Tracks stats using Discord `user_id` instead of display names. If someone changes their nickname to try and hide from the leaderboard, the bot still catches them. Huge W.
-* **Auto Syncable:** When the bot joins a new server, it sends the owner a DM with a setup button. Click it, and it automatically scans the server's history to build the initial database. 
+* **Message Commands:** See who has the most messages using commands. There are many different commands to see who's talked the most throughout different time periods.
+  Here are all of them:
+    - `/last-100-messages`
+    -  `/last-hour`
+    -  `/last-day` 
+    -  `/last-week`
+    -  `/last-month`
+    -  `/all-time`
+
+* **Setup Features:** When the bot is added to a server, there are a few ways you can set it up to get it's database initiliazed with any and all previous messaging data.
+  - When it's added to the server, it automatically dm's the server owner with a button they can press to start the initialization process
+  - If for some reason this fails, you can always run the `/setup` command in the server to have it scan all the past messages. *WARNING* this will take a long time.  
+  - If you need to force the setup command after it has been ran you can use the `/setup-force` command.
+  - If you need to wipe the database clear because of messed up data you can run the `/wipe-server-data` command. 
+
 
 ## Tech Used:
 * **Python 3** 
-* **discord.py** (for the bot framework)
-* **SQLite3** (for the local database)
+* **discord.py**
+  - Used to create the bot on discord as well as create all the commands.
+* **SQLite3**
+  - Used to create the database where all the message data is stored. 
 
 ## Invite the Bot to Your Server
 
-I will be hosting this bot 24/7 so you don't have to worry about running any code. You can add it to your own server using the invite link:
+You can add the bot to your own server using the invite link:
 https://discord.com/oauth2/authorize?client_id=1514369908085887037&permissions=8&integration_type=0&scope=bot+applications.commands
 
 
-Or join this test server with the bot to run the commands:
+Or join this test server with the bot to test out the commands:
 https://discord.gg/g87c4mmTg
 
+
+
+PLEASE give me a bunch of stardust!!! 😁
